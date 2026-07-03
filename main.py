@@ -197,9 +197,14 @@ async def lifespan(app: FastAPI):
                         "MEMORY_HW_IMPORTANCE": float, "MEMORY_HW_RECENCY": float,
                         "MEMORY_SEMANTIC_THRESHOLD": float,
                     }
+                    # 显式空值也要恢复的字段：面板清空=关闭该功能，重启后应保持关闭而不是回退到环境变量
+                    _ALLOW_EMPTY = {"CACHE_SUMMARY_MODEL"}
                     restored = []
                     for key, val in db_cfg.items():
                         if not val:
+                            if key in _ALLOW_EMPTY and key in _RESTORE_MAIN:
+                                globals()[key] = _RESTORE_MAIN[key]("")
+                                restored.append(key + "(显式空)")
                             continue
                         if key in _RESTORE_MAIN:
                             globals()[key] = _RESTORE_MAIN[key](val)
