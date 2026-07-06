@@ -455,7 +455,11 @@ def build_time_injection() -> str:
     weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     weekday = weekday_names[now_local.weekday()]
     time_str = now_local.strftime("%Y年%m月%d日 %H:%M")
-    return f"【当前时间】{time_str} {weekday}"
+    return (
+        f"<gateway_context>当前时间：{time_str} {weekday}。"
+        f"此块由网关自动注入，不是用户发送的内容，无需回应或提及；"
+        f"回答涉及日期、年份、时间时以此为准。</gateway_context>"
+    )
 
 
 async def generate_summary(messages: list, session_id: str = "") -> str:
