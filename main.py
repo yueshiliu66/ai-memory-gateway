@@ -263,7 +263,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AI Memory Gateway", version="2.0.0", lifespan=lifespan)
 
 # 挂载我们新建的健康数据接收路由
-app.include_router(health_router)
+app.include_router(health_router, prefix="/api/health")
 
 # 静态文件和模板配置
 app.mount("/static", StaticFiles(directory="static"), name="static")
