@@ -265,6 +265,72 @@ app = FastAPI(title="AI Memory Gateway", version="2.0.0", lifespan=lifespan)
 # 挂载我们新建的健康数据接收路由
 app.include_router(health_router, prefix="/api/health")
 
+# ============ 独立添加 MCP 协议接口（专供插件） ============
+@app.post("/mcp")
+async def standalone_mcp_handler(request: Request):
+    """
+    专门给根目录 /mcp 用的独立端点，不依赖任何路由前缀。
+    """
+    try:
+        payload = await request.json()
+        method = payload.get("method")
+        req_id = payload.get("id")
+
+        # 1. 握手
+        if method == "initialize":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "serverInfo": {"name": "ai-memory-gateway-mcp", "version": "1.0.0"}
+                }
+            }
+        
+        # 2. 列出工具
+        elif method == "tools/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": "get_health_data",
+                            "description": "查询指定日期的健康数据（步数、睡眠、心率）。参数 date 格式为 YYYY-MM-DD。",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {"date": {"type": "string", "description": "日期"}}
+                            }
+                        }
+                    ]
+                }
+            }
+        
+        # 3. 执行工具
+        elif method == "tools/call":
+            params = payload.get("params", {})
+            args = params.get("arguments", {})
+            date = args.get("date", "")
+            from database import search_memories
+            memories = await search_memories(f"{date} 步数 睡眠", limit=5)
+            found = None
+            for mem in memories:
+                if date in mem.get("content", ""):
+                    found = mem.get("content")
+                    break
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": found or f"没有找到 {date} 的健康数据。"}]
+                }
+            }
+
+        return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "Method not found"}}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 # 静态文件和模板配置
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
