@@ -262,31 +262,48 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AI Memory Gateway", version="2.0.0", lifespan=lifespan)
 
+# 解决 MCP 插件被小手机网页浏览器拦截的问题
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # 挂载我们新建的健康数据接收路由
 app.include_router(health_router, prefix="/api/health")
 
-# ============ 独立添加 MCP 协议接口（专供插件） ============
 @app.post("/mcp")
 async def standalone_mcp_handler(request: Request):
     """
-    专门给根目录 /mcp 用的独立端点，不依赖任何路由前缀。
+    完全匹配插件默认的 /mcp 地址，并带上关键的 Mcp-Session-Id 响应头。
     """
     try:
         payload = await request.json()
         method = payload.get("method")
         req_id = payload.get("id")
 
-        # 1. 握手
+        # 1. 握手（Initialize）-> 必须返回 Mcp-Session-Id 头！
         if method == "initialize":
-            return {
+            session_id = "mcp-session-" + str(uuid.uuid4())[:8]  # 生成一个随机会话ID
+            result_data = {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
                     "protocolVersion": "2025-03-26",
                     "capabilities": {},
-                    "serverInfo": {"name": "ai-memory-gateway-mcp", "version": "1.0.0"}
+                    "serverInfo": {"name": "health-mcp-bridge", "version": "1.0"}
                 }
             }
+            from fastapi.responses import Response
+            import json
+            return Response(
+                content=json.dumps(result_data),
+                media_type="application/json",
+                headers={"Mcp-Session-Id": session_id}  # 【核心修复】把这个头塞进回包
+            )
         
         # 2. 列出工具
         elif method == "tools/list":
@@ -297,10 +314,10 @@ async def standalone_mcp_handler(request: Request):
                     "tools": [
                         {
                             "name": "get_health_data",
-                            "description": "查询指定日期的健康数据（步数、睡眠、心率）。参数 date 格式为 YYYY-MM-DD。",
+                            "description": "查询指定日期的健康数据（步数、睡眠、心率）。",
                             "inputSchema": {
                                 "type": "object",
-                                "properties": {"date": {"type": "string", "description": "日期"}}
+                                "properties": {"date": {"type": "string"}}
                             }
                         }
                     ]
@@ -314,22 +331,23 @@ async def standalone_mcp_handler(request: Request):
             date = args.get("date", "")
             from database import search_memories
             memories = await search_memories(f"{date} 步数 睡眠", limit=5)
-            found = None
+            found_data = None
             for mem in memories:
                 if date in mem.get("content", ""):
-                    found = mem.get("content")
+                    found_data = mem.get("content")
                     break
+            
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "content": [{"type": "text", "text": found or f"没有找到 {date} 的健康数据。"}]
+                    "content": [{"type": "text", "text": found_data or f"没找到 {date} 的健康记录。"}]
                 }
             }
 
         return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "Method not found"}}
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return {"jsonrpc": "2.0", "error": {"code": -32700, "message": str(e)}}
 
 # 静态文件和模板配置
 app.mount("/static", StaticFiles(directory="static"), name="static")
