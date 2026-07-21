@@ -36,3 +36,32 @@ async def receive_health_data(
     except Exception as e:
         print(f"❌ 接收健康数据出错: {e}")
         return {"status": "error", "message": str(e)}
+
+# ---------- 追加 MCP 工具（需要从 main.py 导入 mcp 对象） ----------
+from main import mcp
+from database import search_memories
+
+@mcp.tool()
+async def get_health_data(date: str) -> str:
+    """
+    查询指定日期的健康数据（步数、睡眠、心率等）。
+    参数 date 格式为 YYYY-MM-DD，例如：2026-07-21。
+    """
+    try:
+        # 自动去数据库搜包含这个日期的健康记录
+        memories = await search_memories(f"{date} 步数 睡眠 心率", limit=5)
+        
+        if not memories:
+            return f"没有找到 {date} 的健康数据记录。"
+        
+        # 提取最符合的那条（因为之前存进去的是一段自然语言描述）
+        for mem in memories:
+            content = mem.get("content", "")
+            # 如果搜到的这段内容包含日期，说明就是我们存进去的健康数据
+            if date in content:
+                return f"这是我为你查到的 {date} 健康数据：\n{content}"
+        
+        return f"找到了相关记忆，但没有精确匹配 {date} 的完整健康数据。"
+        
+    except Exception as e:
+        return f"查询数据库时出错：{str(e)}"
