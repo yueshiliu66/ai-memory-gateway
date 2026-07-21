@@ -11,6 +11,7 @@ AI Memory Gateway — 带记忆系统的 LLM 转发网关
 
 环境变量 MEMORY_ENABLED=false 时退化为纯转发网关（第一阶段）。
 """
+from mcp_router import router as health_router
 
 import os
 import json
@@ -260,6 +261,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AI Memory Gateway", version="2.0.0", lifespan=lifespan)
+
+# 挂载我们新建的健康数据接收路由
+app.include_router(health_router)
 
 # 静态文件和模板配置
 app.mount("/static", StaticFiles(directory="static"), name="static")
