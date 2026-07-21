@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Query
-from database import save_memory
-from datetime import datetime
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse
+from database import search_memories
+import json
 
-# 创建一个专门接收健康数据的路由组
-router = APIRouter(prefix="/api/health", tags=["健康数据"])
+# 路由器不设前缀，这样主程序挂载时可以挂在 /mcp 下
+router = APIRouter(tags=["MCP 协议兼容"])
 
-@router.get("/push")
+
+# ---------- 1. 快捷指令接收数据接口（不用改，之前测试成功的） ----------
+@router.get("/push") 
 async def receive_health_data(
     date: str = Query(...),
     steps: int = Query(0),
@@ -17,7 +20,7 @@ async def receive_health_data(
     is_period: int = Query(0)
 ):
     try:
-        # 1. 把零散数据拼成 AI 容易读懂的一段自然语言（这就是“记忆”）
+        from database import save_memory
         health_summary = (
             f"📅 {date}\n"
             f"走路步数：{steps} 步\n"
@@ -25,43 +28,80 @@ async def receive_health_data(
             f"平均心率：{heart_rate_avg} 次/分 (最低{heart_rate_min}，最高{heart_rate_max})\n"
             f"经期状态：{'是' if is_period == 1 else '否'}"
         )
-
-        # 2. 调用项目底层自带的 save_memory，直接存入你的 Supabase
-        # 参数：content（内容），importance（重要性默认5），source_session（来源标记）
         await save_memory(content=health_summary, importance=5, source_session="ios_health")
-
-        print(f"✅ 健康数据已成功存入记忆库: {health_summary}")
-        return {"status": "success", "message": "健康数据已记录到记忆库"}
-
+        return {"status": "success"}
     except Exception as e:
-        print(f"❌ 接收健康数据出错: {e}")
         return {"status": "error", "message": str(e)}
 
-# ---------- 追加 MCP 工具（需要从 main.py 导入 mcp 对象） ----------
-from main import mcp
-from database import search_memories
 
-@mcp.tool()
-async def get_health_data(date: str) -> str:
+# ---------- 2. 伪装成 MCP 服务端的核心接口（欺骗你的 JS 插件） ----------
+@router.post("/mcp") 
+async def mcp_handler(request: Request):
     """
-    查询指定日期的健康数据（步数、睡眠、心率等）。
-    参数 date 格式为 YYYY-MM-DD，例如：2026-07-21。
+    手动响应标准 MCP JSON-RPC 请求，让插件以为连上了真正的 MCP 服务。
     """
     try:
-        # 自动去数据库搜包含这个日期的健康记录
-        memories = await search_memories(f"{date} 步数 睡眠 心率", limit=5)
+        payload = await request.json()
+        method = payload.get("method")
+        req_id = payload.get("id")
+
+        # 第一步：握手（Initialize）
+        if method == "initialize":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "serverInfo": {"name": "ai-memory-gateway-mcp", "version": "1.0.0"}
+                }
+            }
         
-        if not memories:
-            return f"没有找到 {date} 的健康数据记录。"
+        # 第二步：列出工具（Tools List）
+        elif method == "tools/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": "get_health_data",
+                            "description": "查询指定日期的健康数据（步数、睡眠、心率）。参数 date 格式为 YYYY-MM-DD。",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "date": {"type": "string", "description": "日期，例如 2026-07-21"}
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
         
-        # 提取最符合的那条（因为之前存进去的是一段自然语言描述）
-        for mem in memories:
-            content = mem.get("content", "")
-            # 如果搜到的这段内容包含日期，说明就是我们存进去的健康数据
-            if date in content:
-                return f"这是我为你查到的 {date} 健康数据：\n{content}"
-        
-        return f"找到了相关记忆，但没有精确匹配 {date} 的完整健康数据。"
-        
+        # 第三步：执行工具（Tools Call）
+        elif method == "tools/call":
+            params = payload.get("params", {})
+            tool_name = params.get("name")
+            args = params.get("arguments", {})
+            
+            if tool_name == "get_health_data":
+                date = args.get("date", "")
+                # 去数据库搜你的健康记忆
+                memories = await search_memories(f"{date} 步数 睡眠", limit=5)
+                found_data = None
+                for mem in memories:
+                    if date in mem.get("content", ""):
+                        found_data = mem.get("content")
+                        break
+                
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [{"type": "text", "text": found_data or f"抱歉，没有找到 {date} 的健康数据。"}]
+                    }
+                }
+                
+        return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "Method not found"}}
     except Exception as e:
-        return f"查询数据库时出错：{str(e)}"
+        return JSONResponse(status_code=500, content={"error": str(e)})
