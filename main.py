@@ -304,7 +304,12 @@ async def standalone_mcp_handler(request: Request):
                 media_type="application/json",
                 headers={"Mcp-Session-Id": session_id}  # 【核心修复】把这个头塞进回包
             )
-        
+                # ======= 就在这里插入这几行 =======
+        elif method == "notifications/initialized":
+            # 通知不需要返回 JSON 响应，只需要返回 202 (已接受) 告诉插件继续即可
+            from fastapi.responses import Response
+            return Response(status_code=202)
+        # ===================================
         # 2. 列出工具
         elif method == "tools/list":
             return {
