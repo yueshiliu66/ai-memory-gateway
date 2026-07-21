@@ -278,16 +278,16 @@ app.include_router(health_router, prefix="/api/health")
 @app.post("/mcp")
 async def standalone_mcp_handler(request: Request):
     """
-    完全匹配插件默认的 /mcp 地址，并带上关键的 Mcp-Session-Id 响应头。
+    响应插件的 MCP JSON-RPC 请求，必须带 Mcp-Session-Id 响应头。
     """
     try:
         payload = await request.json()
         method = payload.get("method")
         req_id = payload.get("id")
 
-        # 1. 握手（Initialize）-> 必须返回 Mcp-Session-Id 头！
+        # 1. 握手
         if method == "initialize":
-            session_id = "mcp-session-" + str(uuid.uuid4())[:8]  # 生成一个随机会话ID
+            session_id = "mcp-session-" + str(uuid.uuid4())[:8]
             result_data = {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -298,19 +298,18 @@ async def standalone_mcp_handler(request: Request):
                 }
             }
             from fastapi.responses import Response
-            import json
             return Response(
                 content=json.dumps(result_data),
                 media_type="application/json",
-                headers={"Mcp-Session-Id": session_id}  # 【核心修复】把这个头塞进回包
+                headers={"Mcp-Session-Id": session_id}
             )
-                # ======= 就在这里插入这几行 =======
+
+        # 2. 握手后的通知，直接 202 不用回数据
         elif method == "notifications/initialized":
-            # 通知不需要返回 JSON 响应，只需要返回 202 (已接受) 告诉插件继续即可
             from fastapi.responses import Response
             return Response(status_code=202)
-        # ===================================
-        # 2. 列出工具
+
+        # 3. 列出工具
         elif method == "tools/list":
             return {
                 "jsonrpc": "2.0",
@@ -319,40 +318,58 @@ async def standalone_mcp_handler(request: Request):
                     "tools": [
                         {
                             "name": "get_health_data",
-                            "description": "查询指定日期的健康数据（步数、睡眠、心率）。",
+                            "description": "查询指定日期的健康数据（步数、睡眠、心率）。参数 date 格式为 YYYY-MM-DD。",
                             "inputSchema": {
                                 "type": "object",
-                                "properties": {"date": {"type": "string"}}
+                                "properties": {
+                                    "date": {"type": "string", "description": "日期，例如 2026-07-21"}
+                                }
                             }
                         }
                     ]
                 }
             }
-        
-        # 3. 执行工具
+
+        # 4. 执行工具
         elif method == "tools/call":
             params = payload.get("params", {})
+            tool_name = params.get("name")
             args = params.get("arguments", {})
-            date = args.get("date", "")
-            from database import search_memories
-            memories = await search_memories(f"{date} 步数 睡眠", limit=5)
-            found_data = None
-            for mem in memories:
-                if date in mem.get("content", ""):
-                    found_data = mem.get("content")
-                    break
-            
-            return {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "content": [{"type": "text", "text": found_data or f"没找到 {date} 的健康记录。"}]
+
+            if tool_name == "get_health_data":
+                date = args.get("date", "")
+                found_data = None
+                try:
+                    pool = await get_pool()
+                    async with pool.acquire() as conn:
+                        rows = await conn.fetch(
+                            """
+                            SELECT content FROM memories
+                            WHERE source_session = 'ios_health'
+                              AND content LIKE $1
+                            ORDER BY created_at DESC
+                            LIMIT 1
+                            """,
+                            f"%{date}%"
+                        )
+                    if rows:
+                        found_data = rows[0]["content"]
+                except Exception as e:
+                    found_data = f"查询出错：{str(e)}"
+
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [{"type": "text", "text": found_data or f"没有找到 {date} 的健康数据。"}]
+                    }
                 }
-            }
 
         return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "Method not found"}}
+
     except Exception as e:
         return {"jsonrpc": "2.0", "error": {"code": -32700, "message": str(e)}}
+
 
 # 静态文件和模板配置
 app.mount("/static", StaticFiles(directory="static"), name="static")
