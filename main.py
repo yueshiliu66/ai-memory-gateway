@@ -318,7 +318,7 @@ async def standalone_mcp_handler(request: Request):
                     "tools": [
                         {
                             "name": "get_health_data",
-                            "description": "查询指定日期的健康数据（步数、睡眠、心率）。参数 date 格式为 YYYY-MM-DD。",
+                            "description": "查询健康数据（步数、睡眠、心率）。date 参数格式 YYYY-MM-DD，使用北京时间（UTC+8）的今日日期。如不确定日期可传空字符串，将自动返回最近一条记录。",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
@@ -352,6 +352,15 @@ async def standalone_mcp_handler(request: Request):
                             """,
                             f"%{date}%"
                         )
+                        if not rows:
+                            rows = await conn.fetch(
+                                """
+                                SELECT content FROM memories
+                                WHERE source_session = 'ios_health'
+                                ORDER BY created_at DESC
+                                LIMIT 1
+                                """
+                )
                     if rows:
                         found_data = rows[0]["content"]
                 except Exception as e:
