@@ -18,8 +18,9 @@ async def receive_health_data(
 ):
     try:
         from database import save_memory
-        from datetime import datetime, timedelta
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")  # ← 这行之前漏掉了
+        from datetime import datetime, timedelta, timezone
+        tz_beijing = timezone(timedelta(hours=8))
+        yesterday = (datetime.now(tz_beijing) - timedelta(days=1)).strftime("%Y-%m-%d")
         health_summary = (
             f"📅 {date}（今日记录）\n"
             f"昨日运动耗能：{active_energy_burned} 千卡（{yesterday} 全天）\n"
