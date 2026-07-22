@@ -27,7 +27,7 @@ async def receive_health_data(
             f"睡眠时间：{sleep_start}（夜间或凌晨入睡）~ {sleep_end}（今早起床）\n"
             f"平均心率：{heart_rate_avg} 次/分（最低{heart_rate_min}，最高{heart_rate_max}，{yesterday} 全天）\n"
             f"经期状态：{'是' if is_period == 1 else '否'}（今日）"
-            f"体重：{weight} kg（{yesterday}）\n"                           # ← 新增
+            f"体重：{f'{weight} kg（{yesterday}）' if weight > 0 else '今日未测量'}\n"                           # ← 新增
             f"膳食能量摄入：{dietary_energy} 千卡（{yesterday} 全天）\n"    # ← 新增
         )
         await save_memory(content=health_summary, importance=5, source_session="ios_health")
