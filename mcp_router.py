@@ -7,7 +7,7 @@ router = APIRouter(tags=["健康数据接收"])
 @router.get("/push")
 async def receive_health_data(
     date: str = Query(...),
-    steps: int = Query(0),
+    active_energy_burned: int = Query(0),
     sleep_start: str = Query(None),
     sleep_end: str = Query(None),
     heart_rate_avg: float = Query(0.0),
