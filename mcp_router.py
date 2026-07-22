@@ -18,12 +18,13 @@ async def receive_health_data(
 ):
     try:
         from database import save_memory
+        from datetime import datetime, timedelta
         health_summary = (
-            f"📅 {date}\n"
-            f"走路步数：{steps} 步\n"
-            f"睡眠时间：{sleep_start} ~ {sleep_end}\n"
-            f"平均心率：{heart_rate_avg} 次/分 (最低{heart_rate_min}，最高{heart_rate_max})\n"
-            f"经期状态：{'是' if is_period == 1 else '否'}"
+            f"📅 {date}（今日记录）\n"
+            f"走路步数：{steps} 步（{yesterday} 全天）\n"
+            f"睡眠时间：{sleep_start}（昨晚入睡） ~ {sleep_end}（今早起床）\n"
+            f"平均心率：{heart_rate_avg} 次/分 (最低{heart_rate_min}，最高{heart_rate_max}，{yesterday} 全天)\n"
+            f"经期状态：{'是' if is_period == 1 else '否'}（今日）"
         )
         await save_memory(content=health_summary, importance=5, source_session="ios_health")
         return {"status": "success"}
