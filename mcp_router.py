@@ -13,7 +13,7 @@ async def receive_health_data(
     heart_rate_avg: float = Query(0.0),
     heart_rate_min: float = Query(0.0),
     heart_rate_max: float = Query(0.0),
-    is_period: int = Query(0)
+    is_period: int = Query(0),
     weight: float = Query(0.0),        # ← 新增
     dietary_energy: float = Query(0.0) # ← 新增
 ):
