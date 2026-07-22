@@ -22,7 +22,7 @@ async def receive_health_data(
         health_summary = (
             f"📅 {date}（今日记录）\n"
             f"走路步数：{steps} 步（{yesterday} 全天）\n"
-            f"睡眠时间：{sleep_start}（昨晚入睡）~ {sleep_end}（今早起床）\n"
+            f"睡眠时间：{sleep_start}（夜间或凌晨入睡）~ {sleep_end}（今早起床）\n"
             f"平均心率：{heart_rate_avg} 次/分（最低{heart_rate_min}，最高{heart_rate_max}，{yesterday} 全天）\n"
             f"经期状态：{'是' if is_period == 1 else '否'}（今日）"
         )
